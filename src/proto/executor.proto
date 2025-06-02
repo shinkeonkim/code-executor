@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package code_executor;
+
+service CodeExecutor {
+    rpc ExecuteCode (ExecuteRequest) returns (ExecuteResponse);
+    rpc GetStatus (StatusRequest) returns (StatusResponse);
+}
+
+message ExecuteRequest {
+    string code = 1;
+    string language = 2;
+    string version = 3;
+    int32 timeout_seconds = 4;
+    repeated string input = 5;
+    int32 memory_limit_mb = 6;
+}
+
+message ExecuteResponse {
+    string execution_id = 1;
+    ExecutionStatus status = 2;
+    string stdout = 3;
+    string stderr = 4;
+    int32 memory_used_kb = 5;
+    double execution_time_ms = 6;
+    string error_message = 7;
+}
+
+message StatusRequest {
+    string execution_id = 1;
+}
+
+message StatusResponse {
+    string execution_id = 1;
+    ExecutionStatus status = 2;
+}
+
+enum ExecutionStatus {
+    PENDING = 0;
+    RUNNING = 1;
+    COMPLETED = 2;
+    FAILED = 3;
+    TIMEOUT = 4;
+    MEMORY_LIMIT_EXCEEDED = 5;
+    RUNTIME_ERROR = 6;
+} 

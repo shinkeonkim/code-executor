@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  code-executor:
+    build:
+      context: .
+      dockerfile: ./environments/dev/Dockerfile
+    volumes:
+      # Mount source code for development
+      - ./src:/app/src
+      - ./examples:/app/examples
+      - ./build.rs:/app/build.rs
+      - ./Cargo.toml:/app/Cargo.toml
+      - ./Cargo.lock:/app/Cargo.lock
+      # Cache directories
+      - cargo-cache:/root/.cargo/registry
+      - target-cache:/app/target
+      # Docker socket for container management
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - RUST_BACKTRACE=1
+      - CARGO_TARGET_DIR=/app/target
+    command: cargo watch -x run
+    privileged: true  # Needed for resource limits and container management
+    networks:
+      - judging-network
+    ports:
+      - "50051:50051"  # gRPC port
+
+networks:
+  judging-network:
+    external: true
+
+volumes:
+  cargo-cache:
+  target-cache:
