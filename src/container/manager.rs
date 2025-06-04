@@ -1,13 +1,15 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use bollard::Docker;
-use bollard::container::{Config, CreateContainerOptions, StartContainerOptions, RemoveContainerOptions, StatsOptions};
+use bollard::container::{Config, CreateContainerOptions, StartContainerOptions, RemoveContainerOptions, StatsOptions, AttachContainerOptions};
 use bollard::exec::{CreateExecOptions, StartExecResults};
 use anyhow::{Result, anyhow};
 use uuid::Uuid;
 use futures_util::StreamExt;
 use std::time::{Duration, Instant};
 use tokio::time::timeout;
+use futures_util::stream::TryStreamExt;
+use tokio::io::AsyncWriteExt;
 
 const EXECUTION_TIMEOUT: u64 = 10; // Default timeout in seconds
 
@@ -25,12 +27,16 @@ pub struct ExecutionResult {
     pub memory_used: u32,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(i32)]
 pub enum ExecutionStatus {
-    Completed,
-    Failed,
-    Timeout,
-    MemoryLimitExceeded,
+    Pending = 0,
+    Running = 1,
+    Completed = 2,
+    Failed = 3,
+    Timeout = 4,
+    MemoryLimitExceeded = 5,
+    RuntimeError = 6,
 }
 
 impl ContainerManager {
@@ -40,7 +46,7 @@ impl ContainerManager {
     }
 
     pub async fn execute_code(&self, code: &str, language: &str, version: &str,
-                              timeout_seconds: u32, memory_limit_mb: u32) -> Result<ExecutionResult> {
+                              timeout_seconds: u32, memory_limit_mb: u32, input: &[String]) -> Result<ExecutionResult> {
         // Generate unique container name and execution_id
         let execution_id = Uuid::new_v4().to_string();
         let container_name = format!("code-exec-{}-{}", language, &execution_id);
@@ -72,6 +78,7 @@ impl ContainerManager {
             working_dir: Some("/workspace".to_string()),
             env: Some(env),
             network_disabled: Some(true),
+            open_stdin: Some(true),
             ..Default::default()
         };
 
@@ -85,6 +92,27 @@ impl ContainerManager {
         ).await?;
 
         self.docker.start_container(&container.id, None::<StartContainerOptions<String>>).await?;
+
+        // input 전달: attach 후 stdin에 write
+        if !input.is_empty() {
+            let mut attach = self.docker.attach_container::<String>(
+                &container.id,
+                Some(AttachContainerOptions {
+                    stream: Some(true),
+                    stdin: Some(true),
+                    stdout: Some(false),
+                    stderr: Some(false),
+                    logs: Some(false),
+                    detach_keys: None,
+                }),
+            ).await?;
+
+            let mut stdin = attach.input;
+            for line in input {
+                stdin.write_all(format!("{}\n", line).as_bytes()).await?;
+            }
+            stdin.shutdown().await?;
+        }
 
         // 실행 시간 및 메모리 사용량 측정 준비
         let start = Instant::now();
@@ -124,7 +152,7 @@ impl ContainerManager {
         let mut result = ExecutionResult {
             stdout: String::new(),
             stderr: String::new(),
-            status: ExecutionStatus::Completed,
+            status: ExecutionStatus::Pending,
             execution_time: 0.0,
             memory_used: 0,
         };
@@ -154,10 +182,12 @@ impl ContainerManager {
             Ok(Some(Ok(exit))) => {
                 if exit.status_code != 0i64 {
                     result.status = ExecutionStatus::Failed;
+                } else {
+                    result.status = ExecutionStatus::Completed;
                 }
             }
             Ok(Some(Err(e))) => {
-                result.status = ExecutionStatus::Failed;
+                result.status = ExecutionStatus::RuntimeError;
                 result.stderr.push_str(&format!("Container error: {}", e));
             }
             Ok(None) => {
@@ -177,11 +207,19 @@ impl ContainerManager {
 
         // 컨테이너 상태 조회로 OOMKilled(메모리 초과) 확인
         let inspect = self.docker.inspect_container(&container.id, None).await?;
+        let mut is_oom_killed = false;
         if let Some(state) = inspect.state {
             if state.oom_killed.unwrap_or(false) {
-                result.status = ExecutionStatus::MemoryLimitExceeded;
+                is_oom_killed = true;
                 result.stderr.push_str("Memory limit exceeded (OOMKilled)\n");
             }
+        }
+
+        // 최종 status 결정 (우선순위: Timeout > MemoryLimitExceeded > Failed > Completed)
+        if timed_out {
+            result.status = ExecutionStatus::Timeout;
+        } else if is_oom_killed {
+            result.status = ExecutionStatus::MemoryLimitExceeded;
         }
 
         // time 결과 구분자 파싱

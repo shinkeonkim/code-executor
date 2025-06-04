@@ -33,6 +33,7 @@ impl CodeExecutor for CodeExecutorService {
                 &req.version,
                 req.timeout_seconds.try_into().unwrap(),
                 req.memory_limit_mb.try_into().unwrap(),
+                &req.input,
             )
             .await
             .map_err(|e| Status::internal(e.to_string()))?;

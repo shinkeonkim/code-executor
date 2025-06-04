@@ -76,6 +76,24 @@ print(Hello
     println!("\n[CASE 4] 문법 에러 케이스");
     print_pretty_response(&response, "original_response");
 
+    // 5. Test code with stdin input
+    let request = Request::new(ExecuteRequest {
+        code: r#"
+a = input()
+b = input()
+print(f"A: {a}, B: {b}")
+"#.to_string(),
+        language: "python".to_string(),
+        version: "3.12".to_string(),
+        timeout_seconds: 10,
+        memory_limit_mb: 128,
+        input: vec!["hello".to_string(), "world".to_string()],
+    });
+
+    let response = client.execute_code(request).await?;
+    println!("\n[CASE 5] stdin 입력 케이스");
+    print_pretty_response(&response, "original_response");
+
     Ok(())
 }
 
