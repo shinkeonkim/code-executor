@@ -42,3 +42,7 @@ path = "examples/test_parallel_client.rs"
 name = "test_cpp_client"
 path = "examples/test_cpp_client.rs"
 
+[[example]]
+name = "test_java_client"
+path = "examples/test_java_client.rs"
+

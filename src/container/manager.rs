@@ -64,6 +64,7 @@ impl ContainerManager {
             ("cpp", "23") => "code-executor-cpp-23",
             ("python", "3.12") => "code-executor-python-3.12",
             ("ruby", "3.2") => "code-executor-ruby-3.2",
+            ("java", "15") => "code-executor-java-15",
             // ... add more as needed ...
             _ => return Err(anyhow!("Unsupported language or version: {} {}", language, version)),
         };
@@ -231,52 +232,46 @@ impl ContainerManager {
             result.status = ExecutionStatus::MemoryLimitExceeded;
         }
 
-        // time 결과 구분자 파싱
-        if matches!(language, "python" | "ruby") {
-            let mut time_output = String::new();
-            let mut in_time_block = false;
-            let mut filtered_stderr = String::new();
-            for line in result.stderr.lines() {
-                if line.trim() == "===CODE_EXEC_TIME_BEGIN===" {
-                    in_time_block = true;
-                    continue;
-                }
-                if line.trim() == "===CODE_EXEC_TIME_END===" {
-                    in_time_block = false;
-                    continue;
-                }
-                if in_time_block {
-                    time_output.push_str(line);
-                    time_output.push('\n');
-                } else {
-                    filtered_stderr.push_str(line);
-                    filtered_stderr.push('\n');
-                }
+        let mut time_output = String::new();
+        let mut in_time_block = false;
+        let mut filtered_stderr = String::new();
+        for line in result.stderr.lines() {
+            if line.trim() == "===CODE_EXEC_TIME_BEGIN===" {
+                in_time_block = true;
+                continue;
             }
-            // time_output에서 시간/메모리 정보 추출
-            for line in time_output.lines() {
-                if let Some(time_str) = line.strip_prefix("Elapsed (wall clock) time:") {
-                    let time_str = time_str.trim();
-                    let ms = if let Some((min, sec)) = time_str.split_once(":") {
-                        let min: f64 = min.parse().unwrap_or(0.0);
-                        let sec: f64 = sec.parse().unwrap_or(0.0);
-                        (min * 60.0 + sec) * 1000.0
-                    } else {
-                        time_str.parse::<f64>().unwrap_or(0.0) * 1000.0
-                    };
-                    result.execution_time = ms;
-                }
-                if let Some(mem_str) = line.strip_prefix("Maximum resident set size (kbytes):") {
-                    let kb = mem_str.trim().parse::<u32>().unwrap_or(0);
-                    result.memory_used = kb;
-                }
+            if line.trim() == "===CODE_EXEC_TIME_END===" {
+                in_time_block = false;
+                continue;
             }
-            // ===CODE_EXEC_TIME_BEGIN=== ~ ===CODE_EXEC_TIME_END=== 블록을 제거한 stderr로 대체
-            result.stderr = filtered_stderr;
-        } else {
-            result.execution_time = start.elapsed().as_secs_f64() * 1000.0;
-            result.memory_used = (*max_mem.lock().await / 1024) as u32;
+            if in_time_block {
+                time_output.push_str(line);
+                time_output.push('\n');
+            } else {
+                filtered_stderr.push_str(line);
+                filtered_stderr.push('\n');
+            }
         }
+        // time_output에서 시간/메모리 정보 추출
+        for line in time_output.lines() {
+            if let Some(time_str) = line.strip_prefix("Elapsed (wall clock) time:") {
+                let time_str = time_str.trim();
+                let ms = if let Some((min, sec)) = time_str.split_once(":") {
+                    let min: f64 = min.parse().unwrap_or(0.0);
+                    let sec: f64 = sec.parse().unwrap_or(0.0);
+                    (min * 60.0 + sec) * 1000.0
+                } else {
+                    time_str.parse::<f64>().unwrap_or(0.0) * 1000.0
+                };
+                result.execution_time = ms;
+            }
+            if let Some(mem_str) = line.strip_prefix("Maximum resident set size (kbytes):") {
+                let kb = mem_str.trim().parse::<u32>().unwrap_or(0);
+                result.memory_used = kb;
+            }
+        }
+        // ===CODE_EXEC_TIME_BEGIN=== ~ ===CODE_EXEC_TIME_END=== 블록을 제거한 stderr로 대체
+        result.stderr = filtered_stderr;
 
         // Cleanup: remove container (항상 실행, 에러 무시)
         let _ = self.docker.remove_container(

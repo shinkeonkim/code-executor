@@ -14,3 +14,8 @@ bash ./dockerfiles/python:3.12/build.sh
 echo "Building C++ 23 language image..."
 chmod +x ./dockerfiles/cpp:23/build.sh
 bash ./dockerfiles/cpp:23/build.sh
+
+# Build the Java 15 language Docker image if not already built
+echo "Building Java 15 language image..."
+chmod +x ./dockerfiles/java:15/build.sh
+bash ./dockerfiles/java:15/build.sh
