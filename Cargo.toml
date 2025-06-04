@@ -38,3 +38,7 @@ path = "examples/test_ruby_client.rs"
 name = "test_parallel_client"
 path = "examples/test_parallel_client.rs"
 
+[[example]]
+name = "test_cpp_client"
+path = "examples/test_cpp_client.rs"
+

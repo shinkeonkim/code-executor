@@ -9,3 +9,8 @@ bash ./dockerfiles/ruby:3.2/build.sh
 echo "Building Python 3.12 language image..."
 chmod +x ./dockerfiles/python:3.12/build.sh
 bash ./dockerfiles/python:3.12/build.sh
+
+# Build the C++ 23 language Docker image if not already built
+echo "Building C++ 23 language image..."
+chmod +x ./dockerfiles/cpp:23/build.sh
+bash ./dockerfiles/cpp:23/build.sh

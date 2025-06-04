@@ -59,6 +59,15 @@ impl ContainerManager {
             format!("EXECUTION_ID={}", &execution_id),
         ];
 
+        // Determine image name based on language and version
+        let image = match (language, version) {
+            ("cpp", "23") => "code-executor-cpp-23",
+            ("python", "3.12") => "code-executor-python-3.12",
+            ("ruby", "3.2") => "code-executor-ruby-3.2",
+            // ... add more as needed ...
+            _ => return Err(anyhow!("Unsupported language or version: {} {}", language, version)),
+        };
+
         let host_config = bollard::models::HostConfig {
             memory: Some((memory_limit_mb as i64) * 1024 * 1024),
             memory_swap: Some((memory_limit_mb as i64) * 1024 * 1024), // Disable swap
@@ -72,7 +81,7 @@ impl ContainerManager {
         let cmd = vec![];
 
         let config = Config {
-            image: Some(format!("code-executor-{}-{}", language, version)),
+            image: Some(image.to_string()),
             cmd: Some(cmd),
             host_config: Some(host_config),
             working_dir: Some("/workspace".to_string()),
